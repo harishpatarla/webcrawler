@@ -12,6 +12,7 @@ import java.io.UncheckedIOException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -25,18 +26,13 @@ import java.util.stream.Collectors;
 @Slf4j
 @Component
 public class WebCrawlerOrchestrator {
-   private static final String DOMAIN_NAME_PATTERN
-      = "([a-zA-Z0-9]([a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,6}";
+   private static final Pattern DOMAIN_NAME_PATTERN
+      = Pattern.compile("([a-zA-Z0-9]([a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,6}");
+   private Matcher matcher;
    //private ExecutorService executor = Executors.newFixedThreadPool(threadsForComputation());
    private final ExecutorService executor = Executors.newCachedThreadPool();
-   private Matcher matcher;
-
-   private static final Pattern patternDomainName;
 
    public void webCrawler(String searchTerm) {
-
-      // List<String> popularLibraries = Arrays.asList("React Native", "Material UI", "Angular", "React", "Node.js");
-
       CompletableFuture.completedFuture(searchTerm)
          .thenComposeAsync(this::getDataFromGoogle, executor)
          .thenApply(this::extractLinks)
@@ -46,11 +42,11 @@ public class WebCrawlerOrchestrator {
 
    private CompletableFuture<Document> getDataFromGoogle(String query) {
       return CompletableFuture.supplyAsync(() -> {
-         String request = "https://www.google.com/search?q=" + query + "&num=20";
+         String request = "https://www.google.com/search?q=" + query + "&num=50000";
          log.info("Sending request={}", request);
-         Document doc = null;
+         Document document = null;
          try {
-            doc = Jsoup
+            document = Jsoup
                .connect(request)
                .userAgent(
                   "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)")
@@ -58,7 +54,8 @@ public class WebCrawlerOrchestrator {
          } catch (IOException e) {
             e.printStackTrace();
          }
-         return doc;
+         log.info("printing doc={}", document);
+         return document;
       }, executor);
    }
 
@@ -70,23 +67,18 @@ public class WebCrawlerOrchestrator {
          .map(link -> link.attr("href"))
          .filter(temp -> temp.startsWith("/url?q="))
          .forEach(temp -> {
-            matcher = patternDomainName.matcher(temp);
+            matcher = DOMAIN_NAME_PATTERN.matcher(temp);
             while (matcher.find()) {
                try {
-                  URL url = new URL(matcher.group(0).toLowerCase().trim());
+                  String urlString = matcher.group(0).toLowerCase().trim();
+                  URL url = new URL("https", urlString, 443, "");
+                  log.info("web crawling - url={}", url);
                   searchResults.add(url);
                } catch (IOException e) {
                   throw new UncheckedIOException(e);
                }
             }
-            /*if (matcher.find()) {
-               String link = matcher.group(0).toLowerCase().trim();
-               try {
-                  searchResults.add(new URL(link));
-               } catch (MalformedURLException e) {
-                  e.printStackTrace();
-               }
-            }*/
+            log.info("number of sites crawled, searchResultsSize={}", searchResults.size());
          });
       log.info("searchResults={}", searchResults);
       return searchResults;
@@ -100,6 +92,7 @@ public class WebCrawlerOrchestrator {
             for (URL url : urls) {
                content = new String(url.openStream().readAllBytes(),
                   StandardCharsets.UTF_8);
+               log.info("prnting content={}", content);
             }
          } catch (IOException e) {
             e.printStackTrace();
@@ -108,20 +101,21 @@ public class WebCrawlerOrchestrator {
          log.info("downloadedPageContent={}", downloadedPageContent);
          return downloadedPageContent;
       }, executor);
-
    }
 
    private List<String> getLibraries(List<String> downloadPages) {
       List<String> libraries = new ArrayList<>();
       downloadPages.forEach(page -> {
-         Jsoup.parse(page)
+         List<String> libraryList = Jsoup.parse(page)
             .select("script")
             .stream()
             .map(element -> element.attr("src"))
             .filter(src -> !StringUtil.isBlank(src))
             .collect(Collectors.toList());
+         libraries.addAll(libraryList);
       });
-      return libraries;
+      // mocking the popular libraries to return
+      return Arrays.asList("React Native", "Material UI", "Angular", "React", "Node.js");
    }
 
    private int threadsForComputation() {
@@ -129,9 +123,5 @@ public class WebCrawlerOrchestrator {
       int nThreads = availableProcessors - 2;
       log.info("nThreads={}", nThreads);
       return nThreads;
-   }
-
-   static {
-      patternDomainName = Pattern.compile(DOMAIN_NAME_PATTERN);
    }
 }
