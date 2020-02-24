@@ -7,9 +7,9 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 public class WebCrawlerApplication {
 
-	public static void main(String[] args) {
+	public static void main(String[] args) throws InterruptedException {
 		SpringApplication.run(WebCrawlerApplication.class, args);
-		new WebCrawlerOrchestrator().webCrawler("jesus");
+		new WebCrawlerOrchestrator().webCrawler(args[0]);
 	}
 
 }
