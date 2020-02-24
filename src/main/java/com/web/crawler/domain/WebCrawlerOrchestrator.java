@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URL;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -29,6 +30,7 @@ public class WebCrawlerOrchestrator {
    private static final Pattern DOMAIN_NAME_PATTERN
       = Pattern.compile("([a-zA-Z0-9]([a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,6}");
    private Matcher matcher;
+   List<String> downloadedPageContent = new ArrayList<>();
    //private ExecutorService executor = Executors.newFixedThreadPool(threadsForComputation());
    private final ExecutorService executor = Executors.newCachedThreadPool();
 
@@ -37,6 +39,7 @@ public class WebCrawlerOrchestrator {
          .thenComposeAsync(this::getDataFromGoogle, executor)
          .thenApply(this::extractLinks)
          .thenCompose(this::downloadPages)
+         //.exceptionally(ex -> Collections.emptyList())
          .thenAccept(this::getLibraries);
    }
 
@@ -54,13 +57,11 @@ public class WebCrawlerOrchestrator {
          } catch (IOException e) {
             e.printStackTrace();
          }
-         log.info("printing doc={}", document);
          return document;
       }, executor);
    }
 
    private Set<URL> extractLinks(Document doc) {
-      log.info("extracting links for doc={}", doc);
       Set<URL> searchResults = new HashSet<>();
       Elements links = doc.select("a[href]");
       links.stream()
@@ -71,7 +72,7 @@ public class WebCrawlerOrchestrator {
             while (matcher.find()) {
                try {
                   String urlString = matcher.group(0).toLowerCase().trim();
-                  URL url = new URL("https", urlString, 443, "");
+                  URL url = new URL("http", urlString, 80, "");
                   log.info("web crawling - url={}", url);
                   searchResults.add(url);
                } catch (IOException e) {
@@ -86,19 +87,19 @@ public class WebCrawlerOrchestrator {
 
    private CompletableFuture<List<String>> downloadPages(Set<URL> urls) {
       return CompletableFuture.supplyAsync(() -> {
-         var downloadedPageContent = new ArrayList<String>();
          String content = null;
-         try {
-            for (URL url : urls) {
+         for (URL url : urls) {
+            try {
                content = new String(url.openStream().readAllBytes(),
                   StandardCharsets.UTF_8);
-               log.info("prnting content={}", content);
+            } catch (UnknownHostException e) {
+               log.info("UnknownHostException, msg={}, cause={}"
+                  , e.getMessage(), e.getCause());
+            } catch (IOException e) {
+               e.printStackTrace();
             }
-         } catch (IOException e) {
-            e.printStackTrace();
+            downloadedPageContent.add(content);
          }
-         downloadedPageContent.add(content);
-         log.info("downloadedPageContent={}", downloadedPageContent);
          return downloadedPageContent;
       }, executor);
    }
@@ -120,7 +121,7 @@ public class WebCrawlerOrchestrator {
 
    private int threadsForComputation() {
       int availableProcessors = Runtime.getRuntime().availableProcessors();
-      int nThreads = availableProcessors - 2;
+      int nThreads = availableProcessors - 1;
       log.info("nThreads={}", nThreads);
       return nThreads;
    }
