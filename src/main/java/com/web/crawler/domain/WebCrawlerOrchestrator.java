@@ -31,21 +31,37 @@ public class WebCrawlerOrchestrator {
       = Pattern.compile("([a-zA-Z0-9]([a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,6}");
    private Matcher matcher;
    List<String> downloadedPageContent = new ArrayList<>();
+   /**
+    * Below executor can be used leaving one of the core for tasks other than web crawling
+    */
    //private ExecutorService executor = Executors.newFixedThreadPool(threadsForComputation());
+
    private final ExecutorService executor = Executors.newCachedThreadPool();
 
+
+   /**
+    * @param searchTerm This method is driving the steps 1-5 given in the problem
+    *                   I am using the executor to have it run async for time consuming tasks
+    */
    public void webCrawler(String searchTerm) {
       CompletableFuture.completedFuture(searchTerm)
          .thenComposeAsync(this::getDataFromGoogle, executor)
+         //.exceptionally(ex -> new Document(""))
+         //.completeOnTimeout(new Document(""), 60, TimeUnit.SECONDS)
          .thenApply(this::extractLinks)
          .thenCompose(this::downloadPages)
          //.exceptionally(ex -> Collections.emptyList())
          .thenAccept(this::getLibraries);
    }
 
-   private CompletableFuture<Document> getDataFromGoogle(String query) {
+   /**
+    * @param searchTerm This method takes the searchTerm as string and finds asynchronously the results.
+    *                   There is a timeout set to ensure this does not execute forever
+    * @return
+    */
+   private CompletableFuture<Document> getDataFromGoogle(String searchTerm) {
       return CompletableFuture.supplyAsync(() -> {
-         String request = "https://www.google.com/search?q=" + query + "&num=50000";
+         String request = "https://www.google.com/search?q=" + searchTerm + "&num=50000";
          log.info("Sending request={}", request);
          Document document = null;
          try {
@@ -61,9 +77,14 @@ public class WebCrawlerOrchestrator {
       }, executor);
    }
 
-   private Set<URL> extractLinks(Document doc) {
+   /**
+    * @param document Takes document and finds all the links. Stream through those links and construct a URL
+    *                 and add it to the searchResults. A hashset is used to ensure duplicates values are not allowed.
+    * @return
+    */
+   private Set<URL> extractLinks(Document document) {
       Set<URL> searchResults = new HashSet<>();
-      Elements links = doc.select("a[href]");
+      Elements links = document.select("a[href]");
       links.stream()
          .map(link -> link.attr("href"))
          .filter(temp -> temp.startsWith("/url?q="))
@@ -85,6 +106,12 @@ public class WebCrawlerOrchestrator {
       return searchResults;
    }
 
+   /**
+    * @param urls This method downloads the URL content and adds to a list of Strings.
+    *             Exception handling takes care of catching exception and continuing with
+    *             next URL processing.
+    * @return     List<String> having the content of the webpages
+    */
    private CompletableFuture<List<String>> downloadPages(Set<URL> urls) {
       return CompletableFuture.supplyAsync(() -> {
          String content = null;
@@ -104,6 +131,11 @@ public class WebCrawlerOrchestrator {
       }, executor);
    }
 
+   /**
+    * @param downloadPages This method takes list of downloadPages and finds the libraries used in them.
+    *                      This is mocked at the moment to return fixed list of popular JS libraries.
+    * @return List<String> Libraries popular in the downloadedPages
+    */
    private List<String> getLibraries(List<String> downloadPages) {
       List<String> libraries = new ArrayList<>();
       downloadPages.forEach(page -> {
